@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace MicroModule\FaultTolerance\Tests\Unit\Saga;
+namespace AdgoalCommon\FaultTolerance\Tests\Unit\Saga;
 
-use MicroModule\Base\Infrastructure\Testing\ValueObjectMockTrait;
-use MicroModule\FaultTolerance\Saga\SagaFallResistant;
-use MicroModule\FaultTolerance\Saga\Testing\Application\Command\ValidateProgramCommand;
-use MicroModule\FaultTolerance\Saga\Testing\Application\Factory\CommandFactory;
-use MicroModule\FaultTolerance\Saga\Testing\Domain\Event\ProgramWasInitEvent;
-use MicroModule\FaultTolerance\Saga\Testing\TestingSaga;
-use MicroModule\Saga\Testing\Scenario;
-use MicroModule\Saga\Testing\TraceableCommandBus;
+use AdgoalCommon\Base\Infrastructure\Testing\ValueObjectMockTrait;
+use AdgoalCommon\FaultTolerance\Saga\SagaFallResistant;
+use AdgoalCommon\FaultTolerance\Saga\Testing\Application\Command\ValidateProgramCommand;
+use AdgoalCommon\FaultTolerance\Saga\Testing\Application\Factory\CommandFactory;
+use AdgoalCommon\FaultTolerance\Saga\Testing\Domain\Event\ProgramWasInitEvent;
+use AdgoalCommon\FaultTolerance\Saga\Testing\TestingSaga;
+use AdgoalCommon\Saga\Testing\Scenario;
+use AdgoalCommon\Saga\Testing\TraceableCommandBus;
 use Broadway\Domain\DateTime;
 use Broadway\Domain\DomainEventStream;
 use Broadway\Domain\DomainMessage;
@@ -38,7 +38,7 @@ use PHPUnit\Framework\TestCase;
  */
 class SagaFallResistantTest extends TestCase
 {
-    use ValueObjectMockTrait, MockeryPHPUnitIntegration;
+    use MockeryPHPUnitIntegration;
 
     /**
      * Test saga scenario object.ProgramCommand.
@@ -114,10 +114,12 @@ class SagaFallResistantTest extends TestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\Saga\SagaFallResistant::findAndResumeAttempt
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\SagaFallResistantDataProvider::getData
+     * @covers       \AdgoalCommon\FaultTolerance\Saga\SagaFallResistant::findAndResumeAttempt
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\SagaFallResistantDataProvider::getData
      *
      * @param string $uuid Afm process unique id
+     *
+     * @throws \AdgoalCommon\Base\Domain\Exception\LoggerException
      */
     public function fallResistantShouldResumeSagaProcessAfterExceptionTest(string $uuid): void
     {
@@ -166,10 +168,12 @@ class SagaFallResistantTest extends TestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\Saga\SagaFallResistant::findAndResumeAttempt
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\SagaFallResistantDataProvider::getData
+     * @covers       \AdgoalCommon\FaultTolerance\Saga\SagaFallResistant::findAndResumeAttempt
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\SagaFallResistantDataProvider::getData
      *
      * @param string $uuid Afm process unique id
+     *
+     * @throws \AdgoalCommon\Base\Domain\Exception\LoggerException
      */
     public function fallResistantShouldSetDiedStatusToSagaStateAfterMaxAttemptTest(string $uuid): void
     {

@@ -2,17 +2,18 @@
 
 declare(strict_types=1);
 
-namespace MicroModule\FaultTolerance\RabbitEnqueue;
+namespace AdgoalCommon\FaultTolerance\RabbitEnqueue;
 
-use MicroModule\Base\Utils\LoggerTrait;
-use MicroModule\FaultTolerance\RabbitEnqueue\Exception\MessageWasNotSentToQueueException;
-use AMQPConnectionException;
+use AdgoalCommon\Base\Domain\Exception\LoggerException;
+use AdgoalCommon\Base\Utils\LoggerTrait;
+use AdgoalCommon\FaultTolerance\CircuitBreaker\CircuitBreakerInterface;
+use AdgoalCommon\FaultTolerance\RabbitEnqueue\Exception\MessageWasNotSentToQueueException;
 use Closure;
 use DeepCopy\DeepCopy;
 use Enqueue\Client\Message;
 use Enqueue\Client\ProducerInterface;
 use Enqueue\Rpc\Promise;
-use Interop\Queue\Exception\Exception as InteropQueueException;
+use Throwable;
 
 /**
  * Class QueueFaultTolerantProducer.
@@ -21,31 +22,63 @@ class QueueFaultTolerantProducer implements ProducerInterface
 {
     use LoggerTrait;
 
-    private const DEFAULT_RETRY_TIMEOUT = 1000000;
-    private const DEFAULT_RETRY_ATTEMPTS = 3;
+    public const ENQUEUE_PRODUCER_SERVICE_NAME = 'enqueue_producer';
+    protected const DEFAULT_RETRY_TIMEOUT = 1000000;
+
+    /**
+     * Queue producer.
+     *
+     * @var ProducerInterface
+     */
+    protected $originalQueueProducer;
 
     /**
      * Clone for queue producer.
      *
      * @var ProducerInterface
      */
-    private $queueProducerClone;
+    protected $originalQueueProducerClone;
+
+    /**
+     * Circuit breaker counts each failure and once you reach limit it will skip connection attempt with instant failure.
+     *
+     * @var CircuitBreakerInterface
+     */
+    protected $circuitBreaker;
+
+    /**
+     * Special object for cloning.
+     *
+     * @var DeepCopy
+     */
+    protected $deepCopyCloner;
+
+    /**
+     * Connection timeout retry in microsecond.
+     *
+     * @var int
+     */
+    protected $retryTimeout;
 
     /**
      * ProgramResultRepository constructor.
      *
-     * @param ProducerInterface $queueProducer
-     * @param DeepCopy          $deepCopyCloner
-     * @param int|null          $retryAttempts
-     * @param int|null          $retryTimeout
+     * @param ProducerInterface       $originalQueueProducer
+     * @param CircuitBreakerInterface $circuitBreaker
+     * @param DeepCopy                $deepCopyCloner
+     * @param int|null                $retryTimeout
      */
     public function __construct(
-        protected roducerInterface $queueProducer,
-        protected DeepCopy $deepCopyCloner,
-        protected ?int $retryAttempts = self::DEFAULT_RETRY_TIMEOUT,
-        protected ?int $retryTimeout = self::DEFAULT_RETRY_TIMEOUT
+        ProducerInterface $originalQueueProducer,
+        CircuitBreakerInterface $circuitBreaker,
+        DeepCopy $deepCopyCloner,
+        ?int $retryTimeout = null
     ) {
-        $this->queueProducerClone = $deepCopyCloner->copy($queueProducer);
+        $this->originalQueueProducer = $originalQueueProducer;
+        $this->originalQueueProducerClone = $deepCopyCloner->copy($originalQueueProducer);
+        $this->circuitBreaker = $circuitBreaker;
+        $this->deepCopyCloner = $deepCopyCloner;
+        $this->retryTimeout = $retryTimeout ?? self::DEFAULT_RETRY_TIMEOUT;
     }
 
     /**
@@ -61,7 +94,6 @@ class QueueFaultTolerantProducer implements ProducerInterface
         $callback = static function (ProducerInterface $producer) use ($topic, $message): void {
             $producer->sendEvent($topic, $message);
         };
-
         $this->runFaultTolerantProcess($callback);
     }
 
@@ -75,13 +107,14 @@ class QueueFaultTolerantProducer implements ProducerInterface
      *
      * @return Promise|null
      *
+     * @throws LoggerException
      * @throws MessageWasNotSentToQueueException
      *
      * @SuppressWarnings(PHPMD)
      */
     public function sendCommand(string $command, $message, bool $needReply = false): ?Promise
     {
-        $callback = static function (ProducerInterface $producer) use ($command, $message, $needReply) {
+        $callback = static function (ProducerInterface $producer) use ($command, $message, $needReply): ?Promise {
             return $producer->sendCommand($command, $message, $needReply);
         };
 
@@ -89,30 +122,69 @@ class QueueFaultTolerantProducer implements ProducerInterface
     }
 
     /**
-     * Fault tolerant sending message to queue.
+     * Fault tolerant consume the queue.
      *
      * @param Closure $callback
      *
      * @return mixed
      *
      * @throws MessageWasNotSentToQueueException
+     * @throws LoggerException
+     *
+     * @SuppressWarnings(PHPMD)
      */
     protected function runFaultTolerantProcess(Closure $callback)
     {
-        $retryAttempt = 0;
+        $resetConnection = false;
+        $lastException = false;
 
         do {
-            try {
-                return $callback($this->queueProducer);
-            } catch (AMQPConnectionException | InteropQueueException $e) {
-                usleep($this->retryTimeout);
-                ++$retryAttempt;
-                $this->queueProducer = $this->deepCopyCloner->copy($this->queueProducerClone);
-                $this->logMessage($this->getExceptionMessage($e), LOG_WARNING);
-            }
-        } while ($retryAttempt < $this->retryAttempts);
+            $exception = false;
 
-        /* @psalm-suppress PossiblyUndefinedVariable */
-        throw new MessageWasNotSentToQueueException($e->getMessage(), 0, $e);
+            while ($this->circuitBreaker->isAvailable(self::ENQUEUE_PRODUCER_SERVICE_NAME)) {
+                try {
+                    if ($resetConnection) {
+                        $this->resetConnection();
+                    }
+
+                    return $callback($this->originalQueueProducer);
+                } catch (Throwable $exception) {
+                    $this->circuitBreaker->reportFailure(self::ENQUEUE_PRODUCER_SERVICE_NAME);
+                    $resetConnection = true;
+                    $lastException = $exception;
+                }
+            }
+
+            if ($exception && $exception instanceof Throwable) {
+                $this->logMessage($this->getExceptionMessage($exception), LOG_WARNING);
+            }
+
+            if ($this->circuitBreaker->isBlocked(self::ENQUEUE_PRODUCER_SERVICE_NAME)) {
+                break;
+            }
+            $this->sleep();
+        } while (true);
+
+        if ($lastException && $lastException instanceof Throwable) {
+            throw new MessageWasNotSentToQueueException($lastException->getMessage(), 0, $lastException);
+        }
+
+        throw new MessageWasNotSentToQueueException('Service has been blocked.');
+    }
+
+    /**
+     * Find and return first active queue consumer from queue channel.
+     */
+    protected function resetConnection(): void
+    {
+        $this->originalQueueProducer = $this->deepCopyCloner->copy($this->originalQueueProducerClone);
+    }
+
+    /**
+     * Sleep after failure.
+     */
+    protected function sleep(): void
+    {
+        usleep($this->retryTimeout);
     }
 }

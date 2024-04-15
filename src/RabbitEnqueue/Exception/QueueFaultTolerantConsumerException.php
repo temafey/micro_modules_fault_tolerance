@@ -7,10 +7,10 @@ namespace AdgoalCommon\FaultTolerance\RabbitEnqueue\Exception;
 use AdgoalCommon\Base\Domain\Exception\CriticalException;
 
 /**
- * Class MessageWasNotSentToQueueException.
+ * Class QueueFaultTolerantConsumerException.
  *
  * @category Domain\Exception\Program
  */
-final class MessageWasNotSentToQueueException extends CriticalException
+final class QueueFaultTolerantConsumerException extends CriticalException
 {
 }

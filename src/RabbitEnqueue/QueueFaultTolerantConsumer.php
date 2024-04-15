@@ -2,208 +2,214 @@
 
 declare(strict_types=1);
 
-namespace MicroModule\FaultTolerance\RabbitEnqueue;
+namespace AdgoalCommon\FaultTolerance\RabbitEnqueue;
 
-use MicroModule\Base\Utils\LoggerTrait;
-use AMQPChannel;
-use AMQPConnectionException;
-use AMQPQueue;
-use AMQPQueueException;
+use AdgoalCommon\Base\Domain\Exception\LoggerException;
+use AdgoalCommon\Base\Utils\LoggerTrait;
+use AdgoalCommon\FaultTolerance\CircuitBreaker\CircuitBreakerInterface;
+use AdgoalCommon\FaultTolerance\RabbitEnqueue\Exception\QueueFaultTolerantConsumerException;
 use Closure;
-use Enqueue\AmqpExt\AmqpContext;
-use Enqueue\AmqpExt\AmqpSubscriptionConsumer;
-use Enqueue\Consumption\Context\PreConsume;
-use Enqueue\Consumption\PreConsumeExtensionInterface;
-use Interop\Queue\SubscriptionConsumer;
+use Enqueue\Consumption\ExtensionInterface;
+use Enqueue\Consumption\QueueConsumerInterface;
+use Exception;
+use Interop\Queue\Context;
+use Interop\Queue\Processor;
+use Interop\Queue\Queue as InteropQueue;
 use Throwable;
 
 /**
  * Class QueueFaultTolerantConsumer.
  */
-class QueueFaultTolerantConsumer implements PreConsumeExtensionInterface
+class QueueFaultTolerantConsumer implements QueueConsumerInterface
 {
-    use LoggerTrait;
+    use protectedTrait, LoggerTrait;
 
-    private const DEFAULT_RETRY_TIMEOUT = 1000000;
-    private const DEFAULT_RETRY_ATTEMPTS = 3;
-    private const DEFAULT_HEALTH_CHECK_EVENTS_COUNT = 10;
+    public const ENQUEUE_CONSUMER_SERVICE_NAME = 'enqueue_consumer';
+    protected const DEFAULT_RETRY_TIMEOUT = 100000;
+    protected const CONTEXT_QUEUE_CONTEXT_protected_PROPERTY_NAME = 'interopContext';
+    protected const ENQUEUE_CONTEXT_CHANNEL_protected_PROPERTY_NAME = 'channel';
 
-    private const CONTEXT_QUEUE_CHANNEL_PRIVATE_PROPERTY_NAME = 'extChannel';
-    private const SUBSCRIPTION_CONSUMER_SUBSCRIBERS_PRIVATE_PROPERTY_NAME = 'subscribers';
+    /**
+     * Original QueueConsumer object.
+     *
+     * @var QueueConsumerInterface
+     */
+    protected $originalQueueConsumer;
 
-    private const CONNECTION_HEALTH_CHECK_STATUS_CONNECTED = 1;
-    private const CONNECTION_HEALTH_CHECK_STATUS_RECONNECTED = 2;
+    /**
+     * Circuit breaker counts each failure and once you reach limit it will skip connection attempt with instant failure.
+     *
+     * @var CircuitBreakerInterface
+     */
+    protected $circuitBreaker;
+
+    /**
+     * Connection timeout retry in microsecond.
+     *
+     * @var int
+     */
+    protected $retryTimeout;
 
     /**
      * QueueFaultTolerantConsumer constructor.
      *
-     * @param int|null $retryAttempts
-     * @param int|null $retryTimeout
-     * @param int|null $healthCheckEventsCount
+     * @param QueueConsumerInterface  $originalQueueConsumer
+     * @param CircuitBreakerInterface $circuitBreaker
+     * @param int|null                $retryTimeout
      */
     public function __construct(
-        protected ?int $retryAttempts = self::DEFAULT_RETRY_ATTEMPTS,
-        protected ?int $retryTimeout = self::DEFAULT_RETRY_TIMEOUT,
-        protected ?int $healthCheckEventsCount = self::DEFAULT_HEALTH_CHECK_EVENTS_COUNT
-    ) {}
+        QueueConsumerInterface $originalQueueConsumer,
+        CircuitBreakerInterface $circuitBreaker,
+        ?int $retryTimeout = self::DEFAULT_RETRY_TIMEOUT
+    ) {
+        $this->originalQueueConsumer = $originalQueueConsumer;
+        $this->circuitBreaker = $circuitBreaker;
+        $this->retryTimeout = $retryTimeout ?? self::DEFAULT_RETRY_TIMEOUT;
+    }
 
     /**
-     * Executed at every new cycle before calling SubscriptionConsumer::consume method.
-     * The consumption could be interrupted at this step.
+     * Set receive timeout.
      *
-     * @param PreConsume $context
+     * In milliseconds.
      *
-     * @throws Throwable
-     * @throws AMQPConnectionException
-     * @throws AMQPQueueException
+     * @param int $timeout
      */
-    public function onPreConsume(PreConsume $context): void
+    public function setReceiveTimeout(int $timeout): void
     {
-        ++$this->eventsCounter;
+        $this->originalQueueConsumer->setReceiveTimeout($timeout);
+    }
 
-        if ($this->eventsCounter !== $this->healthCheckEventsCount) {
-            return;
+    /**
+     * In milliseconds.
+     */
+    public function getReceiveTimeout(): int
+    {
+        return $this->originalQueueConsumer->getReceiveTimeout();
+    }
+
+    /**
+     * Return Queue Context object.
+     *
+     * @return Context
+     */
+    public function getContext(): Context
+    {
+        return $this->originalQueueConsumer->getContext();
+    }
+
+    /**
+     * Bind enqueue processor by queue name.
+     *
+     * @param InteropQueue|string $queueName
+     * @param Processor           $processor
+     *
+     * @return QueueConsumerInterface
+     */
+    public function bind($queueName, Processor $processor): QueueConsumerInterface
+    {
+        $this->originalQueueConsumer->bind($queueName, $processor);
+
+        return $this;
+    }
+
+    /**
+     * Bind enqueue callback by queue name.
+     *
+     * @param InteropQueue|string $queueName
+     * @param callable            $processor
+     *
+     * @return QueueConsumerInterface
+     */
+    public function bindCallback($queueName, callable $processor): QueueConsumerInterface
+    {
+        $this->originalQueueConsumer->bindCallback($queueName, $processor);
+
+        return $this;
+    }
+
+    /**
+     * Runtime extension - is an extension or a collection of extensions which could be set on runtime.
+     * Here's a good example: @see LimitsExtensionsCommandTrait.
+     *
+     * @param ExtensionInterface|null $runtimeExtension
+     *
+     * @throws Exception
+     */
+    public function consume(?ExtensionInterface $runtimeExtension = null): void
+    {
+        $callback = static function (QueueConsumerInterface $originalQueueConsumer) use ($runtimeExtension): void {
+            $originalQueueConsumer->consume($runtimeExtension);
+        };
+        $this->runFaultTolerantProcess($callback);
+    }
+
+    /**
+     * Fault tolerant consume the queue.
+     *
+     * @param Closure $callback
+     *
+     * @return mixed
+     *
+     * @throws QueueFaultTolerantConsumerException
+     * @throws LoggerException
+     *
+     * @SuppressWarnings(PHPMD)
+     */
+    protected function runFaultTolerantProcess(Closure $callback)
+    {
+        $resetConnection = false;
+        $lastException = false;
+
+        do {
+            $exception = false;
+
+            while ($this->circuitBreaker->isAvailable(self::ENQUEUE_CONSUMER_SERVICE_NAME)) {
+                try {
+                    if ($resetConnection) {
+                        $this->resetConnection();
+                    }
+
+                    return $callback($this->originalQueueConsumer);
+                } catch (Throwable $exception) {
+                    $this->circuitBreaker->reportFailure(self::ENQUEUE_CONSUMER_SERVICE_NAME);
+                    $resetConnection = true;
+                    $lastException = $exception;
+                }
+            }
+
+            if ($exception && $exception instanceof Throwable) {
+                $this->logMessage($this->getExceptionMessage($exception), LOG_WARNING);
+            }
+
+            if ($this->circuitBreaker->isBlocked(self::ENQUEUE_CONSUMER_SERVICE_NAME)) {
+                break;
+            }
+            $this->sleep();
+        } while (true);
+
+        if ($lastException && $lastException instanceof Throwable) {
+            throw new QueueFaultTolerantConsumerException($lastException->getMessage(), 0, $lastException);
         }
-        $this->eventsCounter = 0;
 
-        /** @var AmqpContext $queueContext */
-        $queueContext = $context->getContext();
-        $ampQueue = $this->getAMQPQueue($queueContext);
-        $healthStatus = $this->runFaultTolerantProcess($ampQueue, $queueContext);
-
-        if (self::CONNECTION_HEALTH_CHECK_STATUS_CONNECTED === $healthStatus) {
-            return;
-        }
-
-        $subscriptionConsumer = $context->getSubscriptionConsumer();
-        $this->updateSubscriptionConsumerSubscribers($subscriptionConsumer);
+        throw new QueueFaultTolerantConsumerException('Service has been blocked.');
     }
 
     /**
      * Find and return first active queue consumer from queue channel.
-     *
-     * @param AmqpContext $queueContext
-     *
-     * @return AMQPQueue
      */
-    private function getAMQPQueue(AmqpContext $queueContext): AMQPQueue
+    protected function resetConnection(): void
     {
-        /** @var AMQPChannel $queueChannel */
-        $queueChannel = $queueContext->getExtChannel();
-        $consumers = $queueChannel->getConsumers();
-        reset($consumers);
-
-        return current($consumers);
+        /** @var Context $context */
+        $context = $this->getprotected($this->originalQueueConsumer, self::CONTEXT_QUEUE_CONTEXT_protected_PROPERTY_NAME)();
+        $context->close();
+        $this->setprotected($context, self::ENQUEUE_CONTEXT_CHANNEL_protected_PROPERTY_NAME)(null);
     }
 
     /**
-     * Queue connection health check with retry.
-     *
-     * @param AMQPQueue   $ampQueue
-     * @param AmqpContext $queueContext
-     *
-     * @return int
-     *
-     * @throws Throwable
-     * @throws AMQPConnectionException
-     * @throws AMQPQueueException
+     * Sleep after failure.
      */
-    private function runFaultTolerantProcess(AMQPQueue $ampQueue, AmqpContext $queueContext): int
+    protected function sleep(): void
     {
-        $retryAttempt = 0;
-        $status = self::CONNECTION_HEALTH_CHECK_STATUS_CONNECTED;
-        $consumerException = null;
-
-        do {
-            try {
-                $ampQueue->consume(null, AMQP_PASSIVE);
-                $ampQueue->cancel();
-
-                return $status;
-            } catch (Throwable $consumerException) {
-                $queueContext->close();
-                $this->logMessage($this->getExceptionMessage($consumerException), LOG_WARNING);
-                usleep($this->retryTimeout);
-                ++$retryAttempt;
-                /** @var AMQPChannel $queueChannel */
-                $queueChannel = $queueContext->getExtChannel();
-
-                if (!$queueChannel->isConnected()) {
-                    $ampQueue = $this->createAMQPQueue($ampQueue->getName(), $queueContext);
-                }
-                $status = self::CONNECTION_HEALTH_CHECK_STATUS_RECONNECTED;
-            }
-        } while ($retryAttempt < $this->retryAttempts);
-
-        throw $consumerException;
-    }
-
-    /**
-     * Create and return new AMPQueue object with new connection.
-     *
-     * @param string      $queueName
-     * @param AmqpContext $queueContext
-     *
-     * @return AMQPQueue
-     *
-     * @throws AMQPConnectionException
-     * @throws AMQPQueueException
-     */
-    private function createAMQPQueue(string $queueName, AmqpContext $queueContext): AMQPQueue
-    {
-        $this->setPrivate($queueContext, self::CONTEXT_QUEUE_CHANNEL_PRIVATE_PROPERTY_NAME)(null);
-        $ampQueue = new AMQPQueue($queueContext->getExtChannel());
-        $ampQueue->setName($queueName);
-
-        return $ampQueue;
-    }
-
-    /**
-     * Update queue subscribers through AmqpSubscriptionConsumer object.
-     *
-     * @param SubscriptionConsumer $subscriptionConsumer
-     */
-    private function updateSubscriptionConsumerSubscribers(SubscriptionConsumer $subscriptionConsumer): void
-    {
-        $subscribers = $this->getPrivate($subscriptionConsumer, self::SUBSCRIPTION_CONSUMER_SUBSCRIBERS_PRIVATE_PROPERTY_NAME)();
-        $this->setPrivate($subscriptionConsumer, self::SUBSCRIPTION_CONSUMER_SUBSCRIBERS_PRIVATE_PROPERTY_NAME)([]);
-
-        foreach ($subscribers as $subscriber) {
-            $subscriptionConsumer->subscribe($subscriber[0], $subscriber[1]);
-        }
-    }
-
-    /**
-     * Return closure, that can return any private or protected property value from any object.
-     *
-     * @param object $obj
-     * @param string $attribute
-     *
-     * @return Closure
-     */
-    private function getPrivate(object $obj, string $attribute): Closure
-    {
-        $getter = function () use ($attribute) {
-            return $this->$attribute;
-        };
-
-        return Closure::bind($getter, $obj, get_class($obj));
-    }
-
-    /**
-     * Return closure ,that can set any private or protected property value in any object.
-     *
-     * @param object $obj
-     * @param string $attribute
-     *
-     * @return Closure
-     */
-    private function setPrivate(object $obj, string $attribute): Closure
-    {
-        $setter = function ($value) use ($attribute): void {
-            $this->$attribute = $value;
-        };
-
-        return Closure::bind($setter, $obj, get_class($obj));
+        usleep($this->retryTimeout);
     }
 }

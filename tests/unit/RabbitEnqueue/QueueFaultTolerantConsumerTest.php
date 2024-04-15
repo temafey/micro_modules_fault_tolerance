@@ -2,289 +2,263 @@
 
 declare(strict_types=1);
 
-namespace MicroModule\FaultTolerance\Tests\Unit\RabbitEnqueue;
+namespace AdgoalCommon\FaultTolerance\Tests\Unit\RabbitEnqueue;
 
-use MicroModule\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer;
-use MicroModule\FaultTolerance\Tests\Unit\RepositoryTestCase;
-use AMQPChannel;
-use AMQPConnectionException;
-use AMQPQueue;
-use AMQPQueueException;
-use Enqueue\AmqpExt\AmqpContext;
-use Enqueue\AmqpExt\AmqpSubscriptionConsumer;
-use Enqueue\Consumption\Context\PreConsume;
-use Mockery;
+use AdgoalCommon\FaultTolerance\RabbitEnqueue\Exception\QueueFaultTolerantConsumerException;
+use AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer;
+use AdgoalCommon\FaultTolerance\Tests\Unit\Mock\CircuitBreaker\CircuitBreakerInterfaceMockHelper;
+use AdgoalCommon\FaultTolerance\Tests\Unit\Mock\Vendor\Enqueue\ConsumptionMockHelper;
+use AdgoalCommon\FaultTolerance\Tests\Unit\Mock\Vendor\Interop\QueueMockHelper;
+use AdgoalCommon\FaultTolerance\Tests\Unit\Mock\Vendor\Psr\LogMockHelper;
+use Enqueue\Consumption\QueueConsumerInterface;
+use Interop\Queue\Context;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
-use Mockery\MockInterface;
-use Psr\Log\LoggerInterface;
-use Throwable;
+use PHPUnit\Framework\TestCase;
 
 /**
- * Class QueueFaultTolerantConsumerTest.
+ * Test for class QueueFaultTolerantConsumer.
  *
- * @category Tests\Unit\Infrastructure\Service
+ * @class QueueFaultTolerantConsumerTest
  */
-class QueueFaultTolerantConsumerTest extends RepositoryTestCase
+class QueueFaultTolerantConsumerTest extends TestCase
 {
-    use MockeryPHPUnitIntegration;
+    use QueueMockHelper, ConsumptionMockHelper, CircuitBreakerInterfaceMockHelper, LogMockHelper, MockeryPHPUnitIntegration;
 
     /**
+     * Test for "Set receive timeout".
+     *
      * @test
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::onPreConsume
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::setReceiveTimeout
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\QueueFaultTolerantConsumerProvider::getNoRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForSetReceiveTimeoutMethod()
      *
-     * @param mixed[] $times
-     * @param int     $retryTimeout
-     *
-     * @throws AMQPConnectionException
-     * @throws AMQPQueueException
-     * @throws Throwable
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
      */
-    public function ifConnectionToQueueExistsNoRetryTest(array $times, int $retryTimeout): void
+    public function setReceiveTimeoutShouldCallTheSameMethodInQueueConsumerTest(array $mockArgs, array $mockTimes): void
     {
-        $healthCheck = 1;
-        $queueFaultTolerantConsumer = new QueueFaultTolerantConsumer($times['retryAttempts'], $retryTimeout, $healthCheck);
-        $loggerMock = $this->makeLoggerMock($times);
-        $queueFaultTolerantConsumer->setLogger($loggerMock);
-
-        $preConsumer = $this->makePreConsumer(false, $times);
-        $queueFaultTolerantConsumer->onPreConsume($preConsumer);
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $timeout = $mockArgs['timeout'];
+        $test->setReceiveTimeout($timeout);
     }
 
     /**
+     * Test for "In milliseconds".
+     *
      * @test
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::onPreConsume
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::getAMQPQueue
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::runFaultTolerantProcess
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::updateSubscriptionConsumerSubscribers
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::getPrivate
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::setPrivate
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::getReceiveTimeout
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\QueueFaultTolerantConsumerProvider::getRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForGetReceiveTimeoutMethod()
      *
-     * @param mixed[] $times
-     * @param int     $retryTimeout
-     *
-     * @throws AMQPConnectionException
-     * @throws AMQPQueueException
-     * @throws Throwable
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
      */
-    public function connectionToQueueExistsAfterNextRetryTest(array $times, int $retryTimeout): void
+    public function getReceiveTimeoutShouldCallTheSameMethodInQueueConsumerAndReturnIntTest(array $mockArgs, array $mockTimes): void
     {
-        $healthCheck = 1;
-        $queueFaultTolerantConsumer = new QueueFaultTolerantConsumer($times['retryAttempts'], $retryTimeout, $healthCheck);
-        $loggerMock = $this->makeLoggerMock($times);
-        $queueFaultTolerantConsumer->setLogger($loggerMock);
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $result = $test->getReceiveTimeout();
 
-        $preConsumer = $this->makePreConsumer(true, $times);
-        $queueFaultTolerantConsumer->onPreConsume($preConsumer);
+        self::assertEquals($mockArgs['getReceiveTimeout'], $result);
     }
 
     /**
+     * Test for "Return Queue Context object".
+     *
      * @test
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::onPreConsume
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::runFaultTolerantProcess
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::createAMQPQueue
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::getContext
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\QueueFaultTolerantConsumerProvider::getThrowExAfterRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForGetContextMethod()
      *
-     * @param mixed[] $times
-     * @param int     $retryTimeout
-     *
-     * @throws AMQPConnectionException
-     * @throws AMQPQueueException
-     * @throws Throwable
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
      */
-    public function throwExceptionIfConnectionToQueueNotExistsAfterAllRetryTest(array $times, int $retryTimeout): void
+    public function getContextShouldCallTheSameMethodInQueueConsumerAndReturnContextTest(array $mockArgs, array $mockTimes): void
     {
-        $this->expectException(AMQPConnectionException::class);
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $result = $test->getContext();
 
-        $healthCheck = 1;
-        $queueFaultTolerantConsumer = new QueueFaultTolerantConsumer($times['retryAttempts'], $retryTimeout, $healthCheck);
-        $loggerMock = $this->makeLoggerMock($times);
-        $queueFaultTolerantConsumer->setLogger($loggerMock);
-
-        $preConsumer = $this->makePreConsumer(true, $times);
-        $queueFaultTolerantConsumer->onPreConsume($preConsumer);
+        self::assertInstanceOf(Context::class, $result);
     }
 
     /**
+     * Test for "Bind enqueue processor by queue name".
+     *
      * @test
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\QueueFaultTolerantConsumer::onPreConsume
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::bind
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\QueueFaultTolerantConsumerProvider::getHealthCheckCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForBindMethod()
      *
-     * @param mixed[] $times
-     * @param int     $retryTimeout
-     * @param int     $healthCheck
-     *
-     * @throws AMQPConnectionException
-     * @throws Throwable
-     * @throws AMQPQueueException
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
      */
-    public function checkConnectionToQueueOneTimeAfterManyEventsTest(array $times, int $retryTimeout, int $healthCheck): void
+    public function bindShouldCallTheSameMethodInQueueConsumerAndReturnQueueConsumerInterfaceTest(array $mockArgs, array $mockTimes): void
     {
-        $queueFaultTolerantConsumer = new QueueFaultTolerantConsumer($times['retryAttempts'], $retryTimeout, $healthCheck);
-        $loggerMock = $this->makeLoggerMock($times);
-        $queueFaultTolerantConsumer->setLogger($loggerMock);
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $queueName = $mockArgs['queueName'];
+        $interopQueueProcessorMock = $this->createInteropQueueProcessorMock($mockArgs['Processor'], $mockTimes['Processor']);
+        $result = $test->bind($queueName, $interopQueueProcessorMock);
 
-        $preConsumer = $this->makePreConsumer(false, $times);
-
-        for ($i = 0; $i < $healthCheck; ++$i) {
-            $queueFaultTolerantConsumer->onPreConsume($preConsumer);
-        }
+        self::assertInstanceOf(QueueConsumerInterface::class, $result);
     }
 
     /**
-     * Make PreConsumer object.
+     * Test for "Bind enqueue callback by queue name".
      *
-     * @param bool    $exceptional
-     * @param mixed[] $times
+     * @test
      *
-     * @return PreConsume
+     * @group unit
+     *
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::bindCallback
+     *
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForBindCallbackMethod()
+     *
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
      */
-    private function makePreConsumer(bool $exceptional, array $times): PreConsume
+    public function bindCallbackShouldCallTheSameMethodInQueueConsumerAndReturnQueueConsumerInterfaceTest(array $mockArgs, array $mockTimes): void
     {
-        $contextMock = $this->makeContextMock($exceptional, $times);
-        $amqpSubscriptionConsumerMock = $this->makeAmqpSubscriptionConsumerMock($times);
-        $loggerMock = $this->makeLoggerMock(['warning' => 0]);
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $queueName = $mockArgs['queueName'];
+        $processor = $mockArgs['processor'];
+        $result = $test->bindCallback($queueName, $processor);
 
-        return new PreConsume($contextMock, $amqpSubscriptionConsumerMock, $loggerMock, 1, 1, 0);
+        self::assertInstanceOf(QueueConsumerInterface::class, $result);
     }
 
     /**
-     * Return Context mock object.
+     * Test for "Runtime extension - is an extension or a collection of extensions which could be set on runtime".
      *
-     * @param bool    $exceptional
-     * @param mixed[] $times
+     * @test
      *
-     * @return MockInterface
+     * @group unit
+     *
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::consume
+     *
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForConsumeMethod()
+     *
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
+     *
+     * @throws \Exception
      */
-    private function makeContextMock(bool $exceptional, array $times): MockInterface
+    public function consumeShouldCallTheSameMethodInQueueConsumerTest(array $mockArgs, array $mockTimes): void
     {
-        $contextMock = Mockery::mock(AmqpContext::class);
-        $AMQPChannelMock = $this->makeAMQPChannelMock($exceptional, $times);
-        $contextMock
-            ->shouldReceive('getExtChannel')
-            ->times($times['getExtChannel'])
-            ->andReturn($AMQPChannelMock);
-        $contextMock
-            ->shouldReceive('close')
-            ->times($times['close']);
-        $amqpSubscriptionConsumerMock = $this->makeAmqpSubscriptionConsumerMock($times);
-        $contextMock->shouldReceive('getSubscriptionConsumer')
-            ->times($times['getSubscriptionConsumer'])
-            ->andReturn($amqpSubscriptionConsumerMock);
-
-        return $contextMock;
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $enqueueConsumptionExtensionInterfaceMock = $this->createEnqueueConsumptionExtensionInterfaceMock($mockArgs['ExtensionInterface'], $mockTimes['ExtensionInterface']);
+        $test->consume($enqueueConsumptionExtensionInterfaceMock);
     }
 
     /**
-     * Return AMQPChannel mock object.
+     * Test for "Runtime extension - is an extension or a collection of extensions which could be set on runtime".
      *
-     * @param bool    $exceptional
-     * @param mixed[] $times
+     * @test
      *
-     * @return MockInterface
+     * @group unit
+     *
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::consume
+     *
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForConsumeMethodIsAvailableFalseMethod()
+     *
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
+     *
+     * @throws \Exception
      */
-    private function makeAMQPChannelMock(bool $exceptional = true, array $times): MockInterface
+    public function consumeShouldCallTheSameMethodInQueueConsumerWithNotAvailableAndNotBlockedServiceTes(array $mockArgs, array $mockTimes): void
     {
-        $AMQPQueueMock = $this->makeAMQPQueueMock($exceptional, $times);
-        $AMQPChannelMock = Mockery::mock(AMQPChannel::class);
-        $AMQPChannelMock
-            ->shouldReceive('getConsumers')
-            ->times($times['getConsumers'])
-            ->andReturn([$AMQPQueueMock]);
-        $AMQPChannelMock
-            ->shouldReceive('isConnected')
-            ->times($times['isConnected'])
-            ->andReturn(true);
-
-        return $AMQPChannelMock;
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $enqueueConsumptionExtensionInterfaceMock = $this->createEnqueueConsumptionExtensionInterfaceMock($mockArgs['ExtensionInterface'], $mockTimes['ExtensionInterface']);
+        $test->consume($enqueueConsumptionExtensionInterfaceMock);
     }
 
     /**
-     * Return AMQPQueue mock object.
+     * Test for "Runtime extension - is an extension or a collection of extensions which could be set on runtime".
      *
-     * @param bool    $exceptional
-     * @param mixed[] $times
+     * @test
      *
-     * @return MockInterface
+     * @group unit
+     *
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::consume
+     *
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForConsumeMethodIsAvailableFalseIsBlockedTrueMethod()
+     *
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
+     *
+     * @throws \Exception
      */
-    private function makeAMQPQueueMock(bool $exceptional, array $times): MockInterface
+    public function consumeShouldCallTheSameMethodInQueueConsumerWithNotAvailableAndBlockedServiceShouldThrowMessageWasNotSentToQueueExceptionTest(array $mockArgs, array $mockTimes): void
     {
-        $AMQPQueueMock = Mockery::mock(AMQPQueue::class);
+        $this->expectException(QueueFaultTolerantConsumerException::class);
+        $this->expectExceptionMessage('Service has been blocked.');
 
-        if (true === $exceptional) {
-            $AMQPQueueMock
-                ->shouldReceive('consume')
-                ->times($times['consume'])
-                ->andThrow(AMQPConnectionException::class)
-                ->shouldReceive('consume')
-                ->zeroOrMoreTimes()
-                ->andReturn(true);
-        } else {
-            $AMQPQueueMock
-                ->shouldReceive('consume')
-                ->times($times['consume'])
-                ->andReturn('');
-        }
-
-        $AMQPQueueMock
-            ->shouldReceive('cancel')
-            ->times($times['cancel'])
-            ->andReturn('');
-
-        return $AMQPQueueMock;
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $enqueueConsumptionExtensionInterfaceMock = $this->createEnqueueConsumptionExtensionInterfaceMock($mockArgs['ExtensionInterface'], $mockTimes['ExtensionInterface']);
+        $test->consume($enqueueConsumptionExtensionInterfaceMock);
     }
 
     /**
-     * Return AmqpSubscriptionConsumer mock object.
+     * Test for "Runtime extension - is an extension or a collection of extensions which could be set on runtime".
      *
-     * @param mixed[] $times
+     * @test
      *
-     * @return MockInterface
+     * @group unit
+     *
+     * @covers       \AdgoalCommon\FaultTolerance\RabbitEnqueue\QueueFaultTolerantConsumer::consume
+     *
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\RabbitEnqueue\QueueFaultTolerantConsumerDataProvider::getDataForConsumeMethodIsAvailableFalseIsBlockedTrueWithExceptionMethod()
+     *
+     * @param mixed[] $mockArgs
+     * @param mixed[] $mockTimes
+     *
+     * @throws \Exception
      */
-    private function makeAmqpSubscriptionConsumerMock(array $times): MockInterface
+    public function consumeShouldCallTheSameMethodInQueueConsumerThrowExceptionWithNotAvailableAndBlockedServiceShouldThrowQueueFaultTolerantConsumerExceptionTest(array $mockArgs, array $mockTimes): void
     {
-        $amqpSubscriptionConsumerMock = Mockery::mock(AmqpSubscriptionConsumer::class);
-        $amqpSubscriptionConsumerMock
-            ->shouldReceive('subscribe')
-            ->times($times['subscribe']);
+        $this->expectException(QueueFaultTolerantConsumerException::class);
 
-        $amqpSubscriptionConsumerMock->subscribers = [];
-
-        return $amqpSubscriptionConsumerMock;
-    }
-
-    /**
-     * Return Logger mock object.
-     *
-     * @param mixed[] $times
-     *
-     * @return MockInterface
-     */
-    protected function makeLoggerMock(array $times): MockInterface
-    {
-        $loggerMock = Mockery::mock(LoggerInterface::class);
-        $loggerMock
-            ->shouldReceive('warning')
-            ->times($times['warning'])
-            ->andReturn('');
-
-        return $loggerMock;
+        $enqueueConsumptionQueueConsumerInterfaceMock = $this->createEnqueueConsumptionQueueConsumerInterfaceMock($mockArgs['QueueConsumerInterface'], $mockTimes['QueueConsumerInterface']);
+        $enqueueConsumptionQueueConsumerInterfaceMock->interopContext = $enqueueConsumptionQueueConsumerInterfaceMock->getContext();
+        $circuitBreakerCircuitBreakerInterfaceMock = $this->createCircuitBreakerCircuitBreakerInterfaceMock($mockArgs['CircuitBreakerInterface'], $mockTimes['CircuitBreakerInterface']);
+        $retryTimeout = 10;
+        $test = new QueueFaultTolerantConsumer($enqueueConsumptionQueueConsumerInterfaceMock, $circuitBreakerCircuitBreakerInterfaceMock, $retryTimeout);
+        $enqueueConsumptionExtensionInterfaceMock = $this->createEnqueueConsumptionExtensionInterfaceMock($mockArgs['ExtensionInterface'], $mockTimes['ExtensionInterface']);
+        $test->consume($enqueueConsumptionExtensionInterfaceMock);
     }
 }

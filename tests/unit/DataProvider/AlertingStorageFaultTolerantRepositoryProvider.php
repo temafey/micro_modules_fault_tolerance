@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace MicroModule\FaultTolerance\Tests\Unit\DataProvider;
+namespace AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider;
 
-use MicroModule\Alerting\Domain\Exception\StorageException;
+use AdgoalCommon\Alerting\Domain\Exception\StorageException;
 use RedisException;
 
 /**

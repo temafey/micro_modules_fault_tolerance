@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace MicroModule\FaultTolerance\Tests\Unit\RedisAlerting;
+namespace AdgoalCommon\FaultTolerance\Tests\Unit\RedisAlerting;
 
-use MicroModule\Alerting\Domain\Exception\StorageException;
-use MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository;
-use MicroModule\FaultTolerance\Tests\Unit\RepositoryTestCase;
+use AdgoalCommon\Alerting\Domain\Exception\StorageException;
+use AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository;
+use AdgoalCommon\FaultTolerance\Tests\Unit\RepositoryTestCase;
 use Mockery;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use Mockery\MockInterface;
@@ -28,11 +28,11 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::get
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::set
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::save
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::get
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::set
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::save
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getNoRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getNoRetryCases()
      *
      * @param string  $key
      * @param string  $item
@@ -67,9 +67,9 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::get
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::get
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getRetryCases()
      *
      * @param string  $key
      * @param string  $item
@@ -106,9 +106,9 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::set
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::set
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getSetRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getSetRetryCases()
      *
      * @param string  $key
      * @param string  $item
@@ -145,9 +145,9 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::save
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::save
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getSaveRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getSaveRetryCases()
      *
      * @param string  $key
      * @param string  $item
@@ -184,11 +184,11 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::get
-     *  @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::runFaultTolerantProcess
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::connect
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::get
+     *  @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::runFaultTolerantProcess
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::connect
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getThrowExAfterGetAndAllRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getThrowExAfterGetAndAllRetryCases()
      *
      * @param string  $key
      * @param string  $item
@@ -225,9 +225,9 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::set
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::set
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getThrowExAfterSetAndAllRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getThrowExAfterSetAndAllRetryCases()
      *
      * @param string  $key
      * @param string  $item
@@ -264,9 +264,9 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      *
      * @group unit
      *
-     * @covers       \MicroModule\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::save
+     * @covers       \AdgoalCommon\FaultTolerance\RedisAlerting\AlertingStorageFaultTolerantRepository::save
      *
-     * @dataProvider \MicroModule\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getThrowExAfterSaveAndAllRetryCases()
+     * @dataProvider \AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider\AlertingStorageFaultTolerantRepositoryProvider::getThrowExAfterSaveAndAllRetryCases()
      *
      * @param string  $key
      * @param string  $item
@@ -306,7 +306,7 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      * @param string  $item
      * @param string  $exception
      *
-     * @return MockInterface
+     * @return MockInterface|Redis
      */
     protected function getRedisMock(bool $exceptional = true, array $times, string $item, string $exception): MockInterface
     {
@@ -369,7 +369,7 @@ class AlertingStorageFaultTolerantRepositoryTest extends RepositoryTestCase
      *
      * @param mixed[] $times
      *
-     * @return MockInterface
+     * @return MockInterface|LoggerInterface
      */
     protected function makeLoggerMock(array $times): MockInterface
     {

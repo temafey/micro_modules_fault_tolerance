@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace MicroModule\FaultTolerance\Tests\Unit;
+namespace AdgoalCommon\FaultTolerance\Tests\Unit;
 
-use MicroModule\Base\Infrastructure\Testing\ValueObjectMockTrait;
+use AdgoalCommon\Base\Infrastructure\Testing\ValueObjectMockTrait;
 use Broadway\EventHandling\SimpleEventBus;
 use Broadway\EventHandling\TraceableEventBus;
 use Broadway\EventStore\InMemoryEventStore;
@@ -18,7 +18,6 @@ use PHPUnit\Framework\TestCase;
  */
 class RepositoryTestCase extends TestCase
 {
-    use ValueObjectMockTrait;
 
     /** @var TraceableEventBus */
     protected $eventBus;

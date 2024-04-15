@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace MicroModule\FaultTolerance\Tests\Unit\DataProvider;
+namespace AdgoalCommon\FaultTolerance\Tests\Unit\DataProvider;
 
 class SagaFallResistantDataProvider
 {
