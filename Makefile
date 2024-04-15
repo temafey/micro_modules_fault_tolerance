@@ -17,11 +17,11 @@ build: ## build environment and initialize composer and project dependencies
 
 .PHONY: composer-install
 composer-install: ## Install project dependencies
-	docker-compose run --rm --no-deps php sh -lc 'composer install'
+	docker-compose run --rm --no-deps php sh -lc 'composer install --ignore-platform-reqs'
 
 .PHONY: composer-update
 composer-update: ## Update project dependencies
-	docker-compose run --rm --no-deps php sh -lc 'composer update'
+	docker-compose run --rm --no-deps php sh -lc 'composer update --ignore-platform-reqs'
 
 .PHONY: composer-outdated
 composer-outdated: ## Show outdated project dependencies
