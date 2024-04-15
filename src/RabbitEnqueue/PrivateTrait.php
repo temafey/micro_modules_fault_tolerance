@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AdgoalCommon\FaultTolerance\RabbitEnqueue;
+namespace MicroModule\FaultTolerance\RabbitEnqueue;
 
 use Closure;
 

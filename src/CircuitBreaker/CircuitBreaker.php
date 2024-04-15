@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AdgoalCommon\FaultTolerance\CircuitBreaker;
+namespace MicroModule\FaultTolerance\CircuitBreaker;
 
 /**
  * Class CircuitBreaker.

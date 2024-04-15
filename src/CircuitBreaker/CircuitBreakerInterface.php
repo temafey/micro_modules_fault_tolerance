@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace AdgoalCommon\FaultTolerance\CircuitBreaker;
+namespace MicroModule\FaultTolerance\CircuitBreaker;
 
 /**
  * Allows user code to track avability/unavailability of any service by serviceName.

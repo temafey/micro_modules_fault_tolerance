@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace AdgoalCommon\FaultTolerance\RabbitEnqueue;
+namespace MicroModule\FaultTolerance\RabbitEnqueue;
 
-use AdgoalCommon\Base\Domain\Exception\LoggerException;
-use AdgoalCommon\Base\Utils\LoggerTrait;
-use AdgoalCommon\FaultTolerance\CircuitBreaker\CircuitBreakerInterface;
-use AdgoalCommon\FaultTolerance\RabbitEnqueue\Exception\MessageWasNotSentToQueueException;
+use MicroModule\Base\Domain\Exception\LoggerException;
+use MicroModule\Base\Utils\LoggerTrait;
+use MicroModule\FaultTolerance\CircuitBreaker\CircuitBreakerInterface;
+use MicroModule\FaultTolerance\RabbitEnqueue\Exception\MessageWasNotSentToQueueException;
 use Closure;
 use DeepCopy\DeepCopy;
 use Enqueue\Client\Message;

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace AdgoalCommon\FaultTolerance\RabbitEnqueue;
+namespace MicroModule\FaultTolerance\RabbitEnqueue;
 
-use AdgoalCommon\FaultTolerance\CircuitBreaker\CircuitBreakerInterface;
+use MicroModule\FaultTolerance\CircuitBreaker\CircuitBreakerInterface;
 use Enqueue\Consumption\Context\PostMessageReceived;
 use Enqueue\Consumption\Context\ProcessorException;
 use Enqueue\Consumption\PostMessageReceivedExtensionInterface;
