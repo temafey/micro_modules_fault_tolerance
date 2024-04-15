@@ -1,0 +1,12 @@
+includes:
+	- vendor/phpstan/phpstan-mockery/extension.neon
+
+parameters:
+    checkMissingIterableValueType: false
+
+    ignoreErrors:
+        - '#Parameter .* Mockery\\MockInterface given#'
+        - '#Call to an undefined method Mockery\\Expectation::shouldReceive()#'
+        - '#Access to private property Enqueue\\AmqpExt\\AmqpSubscriptionConsumer\&Mockery\\MockInterface::\$subscribers.#'
+        - '#Property .*\(Mockery\\MockInterface\) does not accept null#'
+        - '#Unsafe usage of new static\(\).#'

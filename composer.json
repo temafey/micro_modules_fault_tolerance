@@ -1,0 +1,55 @@
+{
+    "name": "micro-module/fault-tolerance",
+    "type": "library",
+    "description": "MicroModule Fault Tolerance common library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2",
+        "ext-amqp": "*",
+        "ext-json": "*",
+        "ext-redis": "*",
+        "micro-module/broadway-saga": "^0.9",
+        "micro-module/alerting": "^1.12",
+        "micro-module/base": "^1.12",
+        "micro-module/saga": "^1.12",
+        "broadway/broadway": "^2.3",
+        "broadway/event-store-dbal": "^0.5",
+        "enqueue/amqp-ext": "^0.10",
+        "enqueue/async-command": "^0.10",
+        "enqueue/enqueue-bundle": "^0.10",
+        "enqueue/fs": "^0.10",
+        "enqueue/job-queue": "^0.10"
+    },
+    "require-dev": {
+        "enqueue/null": "^0.10",
+        "jakub-onderka/php-console-highlighter": "^0.4",
+        "jakub-onderka/php-parallel-lint": "^1.0",
+        "mockery/mockery": "^1.2",
+        "myclabs/deep-copy": "^1.9",
+        "phpmd/phpmd": "^2.6",
+        "phpstan/phpstan": "^0.12",
+        "phpstan/phpstan-mockery": "^0.12",
+        "phpstan/phpstan-phpunit": "^0.12",
+        "phpunit/phpunit": "^8.5",
+        "roave/security-advisories": "dev-master",
+        "symfony/phpunit-bridge": "*",
+        "symplify/easy-coding-standard": "^7.2",
+        "vimeo/psalm": "^3.10"
+    },
+    "config": {
+        "preferred-install": {
+            "*": "dist"
+        },
+        "sort-packages": true
+    },
+    "autoload": {
+        "psr-4": {
+            "MicroModule\\FaultTolerance\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+          "MicroModule\\FaultTolerance\\Tests\\Unit\\": "tests/unit"
+        }
+    }
+  }
