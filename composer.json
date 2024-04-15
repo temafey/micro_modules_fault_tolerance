@@ -13,7 +13,6 @@
         "micro-module/saga": "^0.6",
         "micro-module/broadway": "^2.6",
         "micro-module/event-store-dbal": "^0.6",
-        "enqueue/async-command": "^0.10",
         "micro-module/enqueue-bundle": "^0.10",
         "enqueue/fs": "^0.10",
         "micro-module/job-queue": "^0.10"
