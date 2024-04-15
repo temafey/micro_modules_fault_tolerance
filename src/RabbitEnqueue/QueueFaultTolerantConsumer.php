@@ -22,7 +22,7 @@ use Throwable;
  */
 class QueueFaultTolerantConsumer implements QueueConsumerInterface
 {
-    use protectedTrait, LoggerTrait;
+    use PrivateTrait, LoggerTrait;
 
     public const ENQUEUE_CONSUMER_SERVICE_NAME = 'enqueue_consumer';
     protected const DEFAULT_RETRY_TIMEOUT = 100000;
