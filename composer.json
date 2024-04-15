@@ -5,9 +5,6 @@
     "license": "proprietary",
     "require": {
         "php": "^8.2",
-        "ext-amqp": "*",
-        "ext-json": "*",
-        "ext-redis": "*",
         "micro-module/broadway-saga": "^0.6",
         "micro-module/alerting": "^0.7",
         "micro-module/base": "^0.7",
