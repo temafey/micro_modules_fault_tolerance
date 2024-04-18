@@ -200,9 +200,9 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
     protected function resetConnection(): void
     {
         /** @var Context $context */
-        $context = $this->getprotected($this->originalQueueConsumer, self::CONTEXT_QUEUE_CONTEXT_protected_PROPERTY_NAME)();
+        $context = $this->getPrivate($this->originalQueueConsumer, self::CONTEXT_QUEUE_CONTEXT_protected_PROPERTY_NAME)();
         $context->close();
-        $this->setprotected($context, self::ENQUEUE_CONTEXT_CHANNEL_protected_PROPERTY_NAME)(null);
+        $this->setPrivate($context, self::ENQUEUE_CONTEXT_CHANNEL_protected_PROPERTY_NAME)(null);
     }
 
     /**
