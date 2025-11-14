@@ -9,7 +9,7 @@
         "ext-redis": "*",
         "micro-module/broadway-saga": "^0.6",
         "micro-module/alerting": "^0.7",
-        "micro-module/base": "^0.8",
+        "micro-module/base": "^0.9",
         "micro-module/saga": "^0.6",
         "micro-module/broadway": "^2.6",
         "micro-module/event-store-dbal": "^0.6",
