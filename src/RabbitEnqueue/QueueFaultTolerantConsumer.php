@@ -18,7 +18,18 @@ use Interop\Queue\Queue as InteropQueue;
 use Throwable;
 
 /**
- * Class QueueFaultTolerantConsumer.
+ * Fault-tolerant wrapper for Enqueue QueueConsumer.
+ *
+ * Handles TCP connection loss to RabbitMQ by:
+ * 1. Catching socket/connection exceptions from bunny/bunny
+ * 2. Force-resetting the AMQP connection (channel + client + factory cache)
+ * 3. Retrying with exponential backoff
+ * 4. Reporting success to circuit breaker to allow recovery
+ *
+ * The reset mechanism must null three layers:
+ * - AmqpContext.$bunnyChannel (the dead channel)
+ * - AmqpConnectionFactory.$client (the cached BunnyClient with dead TCP)
+ * - This forces establishConnection() to create a fresh BunnyClient + connect()
  */
 class QueueFaultTolerantConsumer implements QueueConsumerInterface
 {
@@ -26,36 +37,27 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
 
     public const ENQUEUE_CONSUMER_SERVICE_NAME = 'enqueue_consumer';
     protected const DEFAULT_RETRY_TIMEOUT = 100000;
+    protected const MAX_BACKOFF_TIMEOUT = 30_000_000; // 30 seconds max backoff
     protected const CONTEXT_QUEUE_CONTEXT_protected_PROPERTY_NAME = 'interopContext';
-    protected const ENQUEUE_CONTEXT_CHANNEL_protected_PROPERTY_NAME = 'channel';
+    protected const ENQUEUE_CONTEXT_CHANNEL_protected_PROPERTY_NAME = 'bunnyChannel';
 
     /**
      * Original QueueConsumer object.
-     *
-     * @var QueueConsumerInterface
      */
-    protected $originalQueueConsumer;
+    protected QueueConsumerInterface $originalQueueConsumer;
 
     /**
      * Circuit breaker counts each failure and once you reach limit it will skip connection attempt with instant failure.
-     *
-     * @var CircuitBreakerInterface
      */
-    protected $circuitBreaker;
+    protected CircuitBreakerInterface $circuitBreaker;
 
     /**
-     * Connection timeout retry in microsecond.
-     *
-     * @var int
+     * Connection timeout retry in microseconds.
      */
-    protected $retryTimeout;
+    protected int $retryTimeout;
 
     /**
      * QueueFaultTolerantConsumer constructor.
-     *
-     * @param QueueConsumerInterface  $originalQueueConsumer
-     * @param CircuitBreakerInterface $circuitBreaker
-     * @param int|null                $retryTimeout
      */
     public function __construct(
         QueueConsumerInterface $originalQueueConsumer,
@@ -68,11 +70,7 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
     }
 
     /**
-     * Set receive timeout.
-     *
-     * In milliseconds.
-     *
-     * @param int $timeout
+     * Set receive timeout in milliseconds.
      */
     public function setReceiveTimeout(int $timeout): void
     {
@@ -89,8 +87,6 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
 
     /**
      * Return Queue Context object.
-     *
-     * @return Context
      */
     public function getContext(): Context
     {
@@ -99,11 +95,6 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
 
     /**
      * Bind enqueue processor by queue name.
-     *
-     * @param InteropQueue|string $queueName
-     * @param Processor           $processor
-     *
-     * @return QueueConsumerInterface
      */
     public function bind($queueName, Processor $processor): QueueConsumerInterface
     {
@@ -114,11 +105,6 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
 
     /**
      * Bind enqueue callback by queue name.
-     *
-     * @param InteropQueue|string $queueName
-     * @param callable            $processor
-     *
-     * @return QueueConsumerInterface
      */
     public function bindCallback($queueName, callable $processor): QueueConsumerInterface
     {
@@ -129,9 +115,6 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
 
     /**
      * Runtime extension - is an extension or a collection of extensions which could be set on runtime.
-     * Here's a good example: @see LimitsExtensionsCommandTrait.
-     *
-     * @param ExtensionInterface|null $runtimeExtension
      *
      * @throws Exception
      */
@@ -146,19 +129,22 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
     /**
      * Fault tolerant consume the queue.
      *
-     * @param Closure $callback
-     *
-     * @return mixed
+     * Wraps the original consumer's consume() call with:
+     * - Circuit breaker integration (failure counting + blocking)
+     * - Automatic TCP reconnection on failure via resetConnection()
+     * - Exponential backoff between retries
+     * - Success reporting to recover circuit breaker state
      *
      * @throws QueueFaultTolerantConsumerException
      * @throws LoggerException
      *
      * @SuppressWarnings(PHPMD)
      */
-    protected function runFaultTolerantProcess(Closure $callback)
+    protected function runFaultTolerantProcess(Closure $callback): mixed
     {
         $resetConnection = false;
         $lastException = false;
+        $retryCount = 0;
 
         do {
             $exception = false;
@@ -169,11 +155,18 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
                         $this->resetConnection();
                     }
 
-                    return $callback($this->originalQueueConsumer);
+                    $result = $callback($this->originalQueueConsumer);
+
+                    // Successful execution - recover circuit breaker
+                    $this->circuitBreaker->reportSuccess(self::ENQUEUE_CONSUMER_SERVICE_NAME);
+                    $retryCount = 0;
+
+                    return $result;
                 } catch (Throwable $exception) {
                     $this->circuitBreaker->reportFailure(self::ENQUEUE_CONSUMER_SERVICE_NAME);
                     $resetConnection = true;
                     $lastException = $exception;
+                    ++$retryCount;
                 }
             }
 
@@ -184,7 +177,7 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
             if ($this->circuitBreaker->isBlocked(self::ENQUEUE_CONSUMER_SERVICE_NAME)) {
                 break;
             }
-            $this->sleep();
+            $this->sleepWithBackoff($retryCount);
         } while (true);
 
         if ($lastException && $lastException instanceof Throwable) {
@@ -195,21 +188,98 @@ class QueueFaultTolerantConsumer implements QueueConsumerInterface
     }
 
     /**
-     * Find and return first active queue consumer from queue channel.
+     * Force-reset the AMQP connection for reconnection.
+     *
+     * Three-layer reset:
+     * 1. Try graceful context.close() - may throw on dead TCP, that is OK
+     * 2. Null the bunnyChannel on AmqpContext - forces factory recreation
+     * 3. Null the cached BunnyClient on AmqpConnectionFactory - forces fresh TCP
+     *
+     * Without step 3, the factory returns the cached dead client and the reconnect
+     * fails immediately. The factory is accessed via ReflectionFunction on the
+     * channel factory closure which is bound to the AmqpConnectionFactory instance.
      */
     protected function resetConnection(): void
     {
-        /** @var Context $context */
-        $context = $this->getPrivate($this->originalQueueConsumer, self::CONTEXT_QUEUE_CONTEXT_protected_PROPERTY_NAME)();
-        $context->close();
-        $this->setPrivate($context, self::ENQUEUE_CONTEXT_CHANNEL_protected_PROPERTY_NAME)(null);
+        try {
+            /** @var Context $context */
+            $context = $this->getPrivate(
+                $this->originalQueueConsumer,
+                self::CONTEXT_QUEUE_CONTEXT_protected_PROPERTY_NAME
+            )();
+
+            // Step 1: Try graceful close (swallow exception on dead TCP)
+            try {
+                $context->close();
+            } catch (Throwable $e) {
+                $this->logMessage(
+                    'Connection close failed during reset (expected on dead TCP): ' . $e->getMessage(),
+                    LOG_INFO
+                );
+            }
+
+            // Step 2: Null the channel so getBunnyChannel() calls the factory
+            $this->setPrivate($context, self::ENQUEUE_CONTEXT_CHANNEL_protected_PROPERTY_NAME)(null);
+
+            // Step 3: Null the cached BunnyClient on AmqpConnectionFactory
+            $factory = $this->resolveConnectionFactory($context);
+            if ($factory !== null) {
+                $this->setPrivate($factory, 'client')(null);
+                $this->logMessage('Connection factory client reset - next consume will create fresh TCP', LOG_INFO);
+            }
+        } catch (Throwable $e) {
+            $this->logMessage('Full connection reset failed: ' . $e->getMessage(), LOG_WARNING);
+        }
     }
 
     /**
-     * Sleep after failure.
+     * Resolve the AmqpConnectionFactory from the context channel factory closure.
+     *
+     * AmqpConnectionFactory::createContext() passes a closure bound to $this (the factory)
+     * into AmqpContext as the $bunnyChannelFactory. We use ReflectionFunction::getClosureThis()
+     * to extract the factory instance, then null its $client property.
+     */
+    private function resolveConnectionFactory(object $context): ?object
+    {
+        try {
+            $channelFactory = $this->getPrivate($context, 'bunnyChannelFactory')();
+
+            if ($channelFactory instanceof Closure) {
+                $reflection = new \ReflectionFunction($channelFactory);
+                $boundObject = $reflection->getClosureThis();
+
+                if ($boundObject !== null) {
+                    return $boundObject;
+                }
+            }
+        } catch (Throwable) {
+            // Factory not accessible - channel is not lazy, or reflection failed.
+            // Non-lazy contexts (Channel injected directly) do not have a factory closure.
+        }
+
+        return null;
+    }
+
+    /**
+     * Sleep with exponential backoff between retry attempts.
+     *
+     * Backoff formula: retryTimeout * 2^retryCount, capped at MAX_BACKOFF_TIMEOUT.
+     * Example with default 100ms base: 100ms, 200ms, 400ms, 800ms, ..., 30s cap
+     */
+    protected function sleepWithBackoff(int $retryCount): void
+    {
+        $backoff = (int) min(
+            $this->retryTimeout * (2 ** min($retryCount, 10)),
+            self::MAX_BACKOFF_TIMEOUT
+        );
+        usleep($backoff);
+    }
+
+    /**
+     * Sleep after failure (backward-compatible entry point).
      */
     protected function sleep(): void
     {
-        usleep($this->retryTimeout);
+        $this->sleepWithBackoff(0);
     }
 }
